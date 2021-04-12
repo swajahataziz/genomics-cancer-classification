@@ -82,6 +82,16 @@ def train():
                 cy = np.zeros_like(y5)
                 cy[c_idx] = 1
                 
+                if f == 24:
+                    print("Saving data set for fold 24")
+                    df_to_save = all_model_df.values[train_index]
+                    pd.DataFrame(df_to_save).to_csv(os.path.join(model_path, 'train_index.csv'), header=True, index=False)
+                    np.save(os.path.join(model_path, 'cy_index.npy'),cy[train_index])
+                
+                unique, counts = np.unique(cy[train_index], return_counts=True)
+                print("Number of samples in class:" + str(c))
+                print(unique, counts)
+                
                 # train a Bayesian rule list classifier for interpretability
                 clf = BayesianRuleListClassifier(listwidthprior=2).fit(np.nan_to_num(all_model_df.values[train_index])[:, chsicpredictor.hsic_idx_],cy[train_index]) 
                 

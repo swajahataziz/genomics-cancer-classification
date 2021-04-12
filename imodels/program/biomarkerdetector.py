@@ -31,21 +31,31 @@ class PHSICAdasynLGBM(BaseEstimator):
         threshold for considering neighbors of important features in stability check
     """
     
-    def __init__(self, n_features=30, adasyn_neighbors=10, B=20, M=10, hsic_splits=5, feature_neighbor_threshold=0.4):
+    def __init__(self, n_features=30, adasyn_neighbors=10, B=20, M=10, hsic_splits=3, stability_minimum_across_splits=2, feature_neighbor_threshold=0.4):
         self.n_features=n_features
         self.adasyn_neighbors=adasyn_neighbors
         self.M=M
         self.B=B
         self.hsic_splits = hsic_splits
         self.neighbor_threshold = feature_neighbor_threshold
+        self.stability_minimum_across_splits = stability_minimum_across_splits
     
     def fit(self, X, y):   
+        if X.shape[1] > 10000:
+            #clf = RandomForestClassifier(n_estimators=1000,n_jobs=-1).fit(X,y)
+            clf = LGBMClassifier(n_estimators=1000,n_jobs=-1).fit(X,y)
+            ftimp = clf.feature_importances_
+            relevant = np.where(ftimp>0)[0]
+            print("relevant ft:",len(relevant),"/",X.shape[1])
+        else:
+            relevant = np.arange(X.shape[1])
+        
         sss = StratifiedShuffleSplit(n_splits=self.hsic_splits,random_state=42)
         idxs = []
         hsics = []
         for train_index, test_index in list(sss.split(X, y)):
             hsic_lasso2 = HSICLasso()
-            hsic_lasso2.input(X[train_index],y[train_index])
+            hsic_lasso2.input(X[:,relevant][train_index],y[train_index])
             hsic_lasso2.classification(self.n_features, B=self.B,M=self.M) #(self.n_features, B=self.B, M=self.M)
             hsics.append(hsic_lasso2)
             
@@ -58,12 +68,26 @@ class PHSICAdasynLGBM(BaseEstimator):
                 all_ft_idx = np.concatenate((all_ft_idx, idx))
             all_ft_idx = np.unique(all_ft_idx)
             
-            idxs.append( all_ft_idx )
-            if len(idxs) == 1:
-                self.hsic_idx_ = idxs[0]
+            idxs.append( relevant[all_ft_idx] )
+            #if len(idxs) == 1:
+            #    self.hsic_idx_ = idxs[0]
+            #else:
+            #    self.hsic_idx_ = np.intersect1d(idxs[-1], self.hsic_idx_)
+        self.hsic_idx_ = []
+        
+        stability_concession = 0
+        while len(self.hsic_idx_) == 0:
+            featurecandidates = np.unique(np.concatenate(idxs))
+            for candidate in featurecandidates:
+                occurrences = np.sum([1 if candidate in idx else 0for idx in idxs])
+                if occurrences > self.stability_minimum_across_splits - stability_concession:
+                    self.hsic_idx_.append(candidate)
+            if len(self.hsic_idx_) > 1:
+                break
             else:
-                self.hsic_idx_ = np.intersect1d(idxs[-1], self.hsic_idx_)
-        print("HSIC done.",len(self.hsic_idx_))
+                # failed to find commonly occurring features - reduce threshold
+                stability_concession += 1
+        print("HSIC done.",len(self.hsic_idx_),"(out of ",len(featurecandidates)," candidates)")
         
         print("Upsampling with ADASYN... (features: "+str(len(self.hsic_idx_))+")")
         sm = ADASYN(sampling_strategy="minority", n_neighbors=self.adasyn_neighbors, n_jobs=-1)

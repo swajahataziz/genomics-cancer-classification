@@ -13,7 +13,7 @@ then
     exit 1
 fi
 
-chmod +x program/train
+chmod +x program/train.py
 chmod +x program/serve
 
 # Get the account number associated with the current IAM credentials
@@ -27,7 +27,7 @@ fi
 
 # Get the region defined in the current configuration (default to us-west-2 if none defined)
 region=$(aws configure get region)
-region=${region:-us-west-2}
+region=${region:-us-east-1}
 
 
 fullname="${account}.dkr.ecr.${region}.amazonaws.com/${image}:latest"
@@ -46,6 +46,7 @@ aws ecr get-login-password --region "${region}" | docker login --username AWS --
 
 # Build the docker image locally with the image name and then push it to ECR
 # with the full name.
+aws ecr get-login-password --region "${region}" | docker login --username AWS --password-stdin 763104351884.dkr.ecr."${region}".amazonaws.com
 
 docker build  -t ${image} .
 docker tag ${image} ${fullname}
