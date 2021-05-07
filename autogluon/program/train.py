@@ -100,9 +100,15 @@ def train():
                 print("done in ",time.time()-t1,"acc",acc) 
                 
                 # save the results
-                with open(os.path.join(model_path,"AutoML_c"+str(c)+"_f"+str(f)+"_5hsic5adasynlgbm100ft.b"), "wb") as fp: 
+                model_file_name = "AutoML_c"+str(c)+"_f"+str(f)+"_5hsic5adasynlgbm100ft.b"
+                acc_file_name = "AutoML_c"+str(c)+"_f"+str(f)+"_acc.b"
+
+                with open(os.path.join(model_path,model_file_name), "wb") as fp: 
                     pickle.dump((train_index,test_index,chsicpredictor,predy,acc,bpredy,bacc,clf),fp)
                     
+                with open(os.path.join(model_path,acc_file_name), "wb") as fp: 
+                    pickle.dump((bacc),fp)
+
                 f+=1
 
         print('Training complete.')

@@ -1,42 +1,73 @@
-# Build an image that can do training and inference in SageMaker
-# This is a Python 3 image that uses the nginx, gunicorn, flask stack
-# for serving inferences in a stable way.
-
 FROM ubuntu:18.04
 
-MAINTAINER Amazon AI <sage-learner@amazon.com>
+MAINTAINER Wajahat Aziz <syedazi@amazon.com>
 
+# Defining some variables used at build time to install Python3
+ARG PYTHON=python3
+ARG PYTHON_PIP=python3-pip
+ARG PIP=pip3
+ARG PYTHON_VERSION=3.6.6
 
-RUN apt-get -y update && apt-get install -y --no-install-recommends \
-         wget \
-         python3-pip \
-         python3-setuptools \
-         nginx \
-         ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt update
+RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata
+# Install some handful libraries like curl, wget, git, build-essential, zlib
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        wget \
+        git \
+        libopencv-dev \
+        openssh-client \
+        openssh-server \
+        vim \
+        zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN ln -s /usr/bin/python3 /usr/bin/python
-RUN ln -s /usr/bin/pip3 /usr/bin/pip
+# Installing Python3
+RUN wget https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tgz && \
+        tar -xvf Python-$PYTHON_VERSION.tgz && cd Python-$PYTHON_VERSION && \
+        ./configure && make && make install && \
+        apt-get update && apt-get install -y --no-install-recommends libreadline-gplv2-dev libncursesw5-dev libssl-dev libsqlite3-dev tk-dev libgdbm-dev libc6-dev libbz2-dev && \
+        make && make install && rm -rf ../Python-$PYTHON_VERSION* && \
+        ln -s /usr/local/bin/pip3 /usr/bin/pip
 
-# Here we get all python packages.
-# There's substantial overlap between scipy and numpy that we eliminate by
-# linking them together. Likewise, pip leaves the install caches populated which uses
-# a significant amount of space. These optimizations save a fair amount of space in the
-# image, which reduces start up time.
-RUN pip --no-cache-dir install numpy==1.16.2 scipy==1.2.1 imbalanced-learn lightgbm pyHSICLasso pandas flask gunicorn tqdm
-RUN pip --no-cache-dir install scikit-learn==0.22 
+# Upgrading pip and creating symbolic link for python3
+RUN ${PIP} --no-cache-dir install --upgrade pip
+RUN ln -s $(which ${PYTHON}) /usr/local/bin/python
+
+WORKDIR /
+
+# Installing numpy, pandas, scikit-learn, scipy
+RUN ${PIP} install \
+        numpy==1.16.2 \
+        pandas \
+        scikit-learn==0.22 \
+        requests==2.21.0 \
+        scipy==1.2.1 \
+        imbalanced-learn \
+        lightgbm \
+        pyHSICLasso \
+        tqdm
+
 RUN apt-get update -y
 RUN apt-get install -y libgomp1
-# Set some environment variables. PYTHONUNBUFFERED keeps Python from buffering our standard
-# output stream, which means that logs can be delivered to the user quickly. PYTHONDONTWRITEBYTECODE
-# keeps Python from writing the .pyc files which are unnecessary in this case. We also update
-# PATH so that the train and serve programs are found when the container is invoked.
 
-ENV PYTHONUNBUFFERED=TRUE
-ENV PYTHONDONTWRITEBYTECODE=TRUE
-ENV PATH="/opt/program:${PATH}"
+# Setting some environment variables.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/lib" \
+    PYTHONIOENCODING=UTF-8 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
-# Set up the program in the image
-COPY program /opt/program
-WORKDIR /opt/program
+RUN ${PIP} install --no-cache --upgrade \
+    sagemaker-training
 
+# Copies code under /opt/ml/code where sagemaker-containers expects to find the script to run
+COPY program/* /opt/ml/code/
+
+# Defines train.py as script entry point
+ENV SAGEMAKER_PROGRAM train.py

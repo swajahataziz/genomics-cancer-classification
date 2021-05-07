@@ -14,6 +14,8 @@ import traceback
 
 import pandas as pd
 
+import argparse
+
 from sklearn import tree
 from tqdm import tqdm
 
@@ -47,7 +49,10 @@ channel_name='training'
 training_path = os.path.join(input_path, channel_name)
 
 # The function to execute the training.
-def train():
+def train(args):
+
+    best_acc = float("inf")
+
     print('Starting the training.')
     try:
         # Read in any hyperparameters that the user passed with the training job
@@ -79,7 +84,7 @@ def train():
                 cy = np.zeros_like(y5)
                 cy[c_idx] = 1
 
-                chsicpredictor = PHSICAdasynLGBM(n_features=100,B=5,M=5).fit(np.nan_to_num(all_model_df.values[train_index]),cy[train_index]) 
+                chsicpredictor = PHSICAdasynLGBM(n_features=args.n_features,B=args.block_size,M=args.max_allowed).fit(np.nan_to_num(all_model_df.values[train_index]),cy[train_index]) 
 
                 test_y = y5[test_index]
                 c_idx = np.where(test_y==c)[0]
@@ -88,12 +93,24 @@ def train():
 
                 predy = chsicpredictor.predict(np.nan_to_num(all_model_df.values[test_index]))
                 acc = accuracy_score(test_y, predy)
-                print("done in ",time.time()-t1,"acc",acc) 
+                print("done in ",time.time()-t1)
+                print('Training-set accuracy={0:0.4f};'. format(acc))
 
                 # save the model
-                with open(os.path.join(model_path,"c"+str(c)+"_f"+str(f)+"_5hsic5adasynlgbm100ft.b"), "wb") as fp: 
+                model_file_name = "c"+str(c)+"_f"+str(f)+"_5hsic5adasynlgbm100ft.b"
+                acc_file_name = "c"+str(c)+"_f"+str(f)+"_lgbm_acc.b"
+
+                with open(os.path.join(model_path, model_file_name), "wb") as fp: 
                     pickle.dump((train_index,test_index,chsicpredictor,predy,acc),fp)
 
+                with open(os.path.join(model_path, acc_file_name), "wb") as fp: 
+                    pickle.dump((acc),fp)
+
+                if acc < best_acc:
+                    print("******** New optimal found, saving state ********")
+                    best_acc = acc
+                    with open(os.path.join(model_path,"final_hsic5adasynlgbm.b"), "wb") as fp: 
+                        pickle.dump((chsicpredictor),fp)
                 f+=1
         print('Training complete.')
     except Exception as e:
@@ -107,8 +124,29 @@ def train():
         # A non-zero exit code causes the training job to be marked as Failed.
         sys.exit(255)
 
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--n-features', type=int, default=100, metavar='NFeatures',
+                        help='Max. number of biomarkers (important features) to be selected')
+    parser.add_argument('--block-size', type=int, default=5, metavar='B',
+                        help='Block size for Block HSIC Lasso')
+    parser.add_argument('--max-allowed', type=int, default=5, metavar='M',
+                        help='Max allowed permutations of samples for Block HSIC Lasso')
+
+    # Container environment
+    parser.add_argument('--hosts', type=list, default=json.loads(os.environ['SM_HOSTS']))
+    parser.add_argument('--current-host', type=str, default=os.environ['SM_CURRENT_HOST'])
+    parser.add_argument('--model-dir', type=str, default=os.environ['SM_MODEL_DIR'])
+    parser.add_argument('--train', type=str, default=os.environ['SM_CHANNEL_TRAINING'])
+    parser.add_argument('--num-gpus', type=int, default=os.environ['SM_NUM_GPUS'])
+    
+    return parser.parse_args()
+
 if __name__ == '__main__':
-    train()
+    args = parse_args()
+    train(args)
 
     # A zero exit code causes the job to be marked a Succeeded.
     sys.exit(0)

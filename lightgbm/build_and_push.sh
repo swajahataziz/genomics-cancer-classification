@@ -13,7 +13,7 @@ then
     exit 1
 fi
 
-chmod +x program/train
+chmod +x program/train.py
 chmod +x program/serve
 
 # Get the account number associated with the current IAM credentials
