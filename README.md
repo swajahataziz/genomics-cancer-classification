@@ -13,4 +13,4 @@ To start with the implementation, you will have to build the containers of indiv
 
 `./build_and_push.sh genomics-cancer-classification-lightgbm`
 
-Subsequently, follow the steps in the notebook
+Subsequently, follow the steps in the notebook in the repository 'genomic-cancer-classification'
